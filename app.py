@@ -11,31 +11,49 @@ if 'db' not in st.session_state:
     ])
 
 # --- 权限管理 (简单的登录逻辑) ---
+# --- 权限管理 (简单的登录逻辑) ---
 def check_password():
-    def password_entered():
-        if st.session_state["username"] in ["admin", "user"]:
-            st.session_state["authenticated"] = True
-            # 设置权限级别
-            if st.session_state["username"] == "admin" and st.session_state["password"] == "admin123":
-                st.session_state["role"] = "admin"
-            elif st.session_state["username"] == "user": # 假设普通用户不需要密码或简单密码
-                st.session_state["role"] = "user"
-            else:
-                 st.session_state["authenticated"] = False
-                 st.error("密码错误")
-        else:
-             st.session_state["authenticated"] = False
-             st.error("用户不存在")
-
+    """返回 True 代表已登录，False 代表未登录"""
+    
+    # 1. 如果没有这两个变量，先初始化（防止报错）
     if "authenticated" not in st.session_state:
         st.session_state["authenticated"] = False
+    if "current_user" not in st.session_state:
+        st.session_state["current_user"] = None
+    if "role" not in st.session_state:
+        st.session_state["role"] = None
 
-    if not st.session_state["authenticated"]:
-        st.text_input("用户名 (admin/user)", key="username")
-        st.text_input("密码 (admin的密码是 admin123)", type="password", key="password")
-        st.button("登录", on_click=password_entered)
-        return False
-    return True
+    # 2. 定义登录点击后的动作
+    def password_entered():
+        # 注意：这里我们读取临时输入框的 username，存到永久变量 current_user 里
+        user = st.session_state.get("username_input", "") # 使用 get 防止报错
+        pwd = st.session_state.get("password_input", "")
+
+        if user in ["admin", "user"]:
+            # 验证逻辑
+            if user == "admin" and pwd == "admin123":
+                st.session_state["authenticated"] = True
+                st.session_state["role"] = "admin"
+                st.session_state["current_user"] = user # 【关键】存到这里！
+            elif user == "user": # 假设普通用户不校验复杂密码
+                st.session_state["authenticated"] = True
+                st.session_state["role"] = "user"
+                st.session_state["current_user"] = user # 【关键】存到这里！
+            else:
+                st.error("密码错误")
+        else:
+            st.error("用户不存在")
+
+    # 3. 如果已登录，直接返回 True
+    if st.session_state["authenticated"]:
+        return True
+
+    # 4. 如果没登录，显示输入框
+    st.text_input("用户名 (admin/user)", key="username_input") # 【关键】改个名，叫 username_input
+    st.text_input("密码 (admin的密码是 admin123)", type="password", key="password_input")
+    st.button("登录", on_click=password_entered)
+    
+    return False
 
 # --- Word 生成功能 (核心) ---
 def generate_doc(record):
@@ -64,9 +82,12 @@ def generate_doc(record):
 
 # --- 主程序 ---
 if check_password():
-    st.sidebar.write(f"当前用户: {st.session_state['username']} (权限: {st.session_state['role']})")
+    # 【注意】这里改成 st.session_state['current_user']
+    st.sidebar.write(f"当前用户: {st.session_state['current_user']} (权限: {st.session_state['role']})")
+    
     if st.sidebar.button("退出登录"):
         st.session_state["authenticated"] = False
+        st.session_state["current_user"] = None # 退出时清空
         st.rerun()
 
     menu = st.sidebar.radio("菜单", ["📝 录入新单", "🔍 历史查询"])
