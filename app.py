@@ -8,7 +8,7 @@ import os
 # ==========================================
 # 1. 页面配置
 # ==========================================
-st.set_page_config(page_title="激光器维修系统 (稳定版)", page_icon="🔋", layout="wide")
+st.set_page_config(page_title="激光器维修系统 (表格版)", page_icon="🔋", layout="wide")
 
 # 初始化数据库
 if 'db' not in st.session_state:
@@ -19,57 +19,115 @@ if 'is_admin' not in st.session_state:
     st.session_state['is_admin'] = False
 
 # ==========================================
-# 2. 核心逻辑：数据处理与文档生成
+# 2. 初始化表格数据源 (用于清空和默认值)
 # ==========================================
+def init_dataframes():
+    # 1. 基础信息表 (单行)
+    if 'df_basic' not in st.session_state:
+        st.session_state.df_basic = pd.DataFrame([
+            {"序列号": "", "型号": "WYP-", "电压": "24V", "操作员": "Guest"}
+        ])
+    
+    # 2. 外观检查表 (单行)
+    if 'df_inspect' not in st.session_state:
+        st.session_state.df_inspect = pd.DataFrame([
+            {"外壳/包装": "完好 Normal", "机械损伤": "无 None"}
+        ])
 
+    # 3. 电子参数表 (单行)
+    if 'df_elec' not in st.session_state:
+        st.session_state.df_elec = pd.DataFrame([
+            {"工作时长": "", "报警状态": "No Alarm"}
+        ])
+
+    # 4. TEC 参数表 (2行: TEC1, TEC2)
+    if 'df_tec' not in st.session_state:
+        st.session_state.df_tec = pd.DataFrame([
+            {"名称": "TEC 1", "设定值": "", "回读值": "", "电流": ""},
+            {"名称": "TEC 2", "设定值": "", "回读值": "", "电流": ""}
+        ])
+
+    # 5. 驱动参数表 (单行)
+    if 'df_driver' not in st.session_state:
+        st.session_state.df_driver = pd.DataFrame([
+            {"高压 (HV)": "", "峰值电流": "", "脉宽": ""}
+        ])
+
+    # 6. 功率测量表 (动态)
+    if 'df_power' not in st.session_state:
+        st.session_state.df_power = pd.DataFrame([
+            {"电流 I [A]": "", "脉宽 [us]": "", "波长 λ": "", "功率 P [W]": ""}
+        ])
+
+    # 7. 输出功率表 (单行)
+    if 'df_output' not in st.session_state:
+        st.session_state.df_output = pd.DataFrame([
+            {"355nm": "", "532nm": "", "1064nm": ""}
+        ])
+    
+    # 8. 详细维修步骤 (动态)
+    if 'df_action' not in st.session_state:
+        st.session_state.df_action = pd.DataFrame([
+            {"维修措施": "", "操作员": "Guest", "日期": datetime.now().strftime("%Y-%m-%d")}
+        ])
+
+    # 文本域状态
+    if 'txt_problem' not in st.session_state: st.session_state.txt_problem = ""
+    if 'txt_summary' not in st.session_state: st.session_state.txt_summary = ""
+    if 'txt_note' not in st.session_state: st.session_state.txt_note = ""
+
+def reset_all_data():
+    """强制重置所有表格为默认状态"""
+    del st.session_state.df_basic
+    del st.session_state.df_inspect
+    del st.session_state.df_elec
+    del st.session_state.df_tec
+    del st.session_state.df_driver
+    del st.session_state.df_power
+    del st.session_state.df_output
+    del st.session_state.df_action
+    st.session_state.txt_problem = ""
+    st.session_state.txt_summary = ""
+    st.session_state.txt_note = ""
+    init_dataframes()
+
+# 运行初始化
+init_dataframes()
+
+# ==========================================
+# 3. 文档生成逻辑
+# ==========================================
 def flatten_data_for_template(record):
-    """
-    将复杂的数据结构拍平，适配 Word 模板的 {{ tag_1 }} 格式
-    """
-    # 1. 复制基础字段 (sn, model, action, problem 等)
     context = record.copy()
     
-    # 2. 处理功率测量表 (Power Table)
-    # 对应模板: {{ current_1 }}, {{ pulse_1 }}, {{ nm_1 }}, {{ power_1 }}
-    power_data = record.get('power_table', [])
-    for i, row in enumerate(power_data):
+    # 处理功率表
+    for i, row in enumerate(record.get('power_table', [])):
         suffix = f"_{i+1}"
-        # 注意：这里要用 .get() 防止表格里有空值导致报错
         context[f"current{suffix}"] = row.get("电流 I [A]", "")
         context[f"pulse{suffix}"] = row.get("脉宽 [us]", "")
         context[f"nm{suffix}"] = row.get("波长 λ", "")
         context[f"power{suffix}"] = row.get("功率 P [W]", "")
     
-    # 3. 处理输出功率表 (Output Table)
-    # 对应模板: {{ power_355_1 }} ...
-    output_data = record.get('output_table', [])
-    for i, row in enumerate(output_data):
+    # 处理输出功率
+    for i, row in enumerate(record.get('output_table', [])):
         suffix = f"_{i+1}"
         context[f"power_355{suffix}"] = row.get("355nm", "")
         context[f"power_532{suffix}"] = row.get("532nm", "")
         context[f"power_1064{suffix}"] = row.get("1064nm", "")
 
-    # 4. 处理维修步骤表 (Action Table)
-    # 对应模板: {{ action_1 }}, {{ operator_1 }} ...
-    action_data = record.get('action_table', [])
-    for i, row in enumerate(action_data):
+    # 处理维修步骤
+    for i, row in enumerate(record.get('action_table', [])):
         suffix = f"_{i+1}"
-        # 这里使用了 action_1，绝对不会和外面的 action (总体描述) 冲突
         context[f"action{suffix}"] = row.get("维修措施", "")
         context[f"operator{suffix}"] = row.get("操作员", "")
         context[f"date{suffix}"] = row.get("日期", "")
-        
     return context
 
 def generate_doc(record):
     if not os.path.exists("template.docx"):
         return None
-    
     doc = DocxTemplate("template.docx")
-    
-    # 数据转换
     final_context = flatten_data_for_template(record)
-    
     try:
         doc.render(final_context)
         buffer = BytesIO()
@@ -77,12 +135,10 @@ def generate_doc(record):
         buffer.seek(0)
         return buffer
     except Exception as e:
-        # 这里记录错误但不中断程序
-        print(f"Word生成错误: {e}")
         return None
 
 # ==========================================
-# 3. 侧边栏：管理员登录
+# 4. 侧边栏：管理员
 # ==========================================
 with st.sidebar:
     st.header("🔧 系统菜单")
@@ -103,126 +159,121 @@ with st.sidebar:
                 st.rerun()
 
 # ==========================================
-# 4. 主界面
+# 5. 主界面
 # ==========================================
 st.title("🔋 激光器维修档案系统")
+st.caption("全表格交互模式：在表格内按 Enter 仅确认输入，不会误提交。")
 
-tab1, tab2 = st.tabs(["📝 录入新记录", "🔍 历史档案库"])
+tab1, tab2 = st.tabs(["📝 录入工单", "🔍 历史档案"])
 
-# --- TAB 1: 录入界面 ---
 with tab1:
-    # 【关键】使用 st.form 解决“填一个数刷新一下”的问题
-    # clear_on_submit=True 解决“保存后需要手动清空”的问题
-    with st.form("main_form", clear_on_submit=True):
-        st.info("💡 提示：在表格中按 Enter 是确认输入，不会提交表单。只有点击最底部的“保存”按钮才会提交并清空。")
-        
-        # 1. 基础信息
-        st.subheader("1. 基础信息")
-        c1, c2, c3, c4 = st.columns(4)
-        sn = c1.text_input("序列号 (Serial No.)")
-        model = c2.text_input("型号 (Model)", value="WYP-")
-        voltage = c3.text_input("电压 (Voltage)", value="24V")
-        operator = c4.text_input("当前操作员", value="Guest")
-        
-        # 2. 外观
-        st.subheader("2. 外观检查")
-        c1, c2 = st.columns(2)
-        obs_case = c1.text_input("外壳/包装状态", value="完好 Normal")
-        obs_mech = c2.text_input("机械损伤", value="无 None")
+    # 1. 基础信息区 (使用表格代替输入框)
+    st.subheader("1. 基础信息 & 外观")
+    col1, col2 = st.columns([1.5, 1])
+    with col1:
+        st.caption("基础参数")
+        # 这里的 num_rows="fixed" 禁止添加新行，只能修改第一行
+        basic_df = st.data_editor(st.session_state.df_basic, num_rows="fixed", use_container_width=True, hide_index=True, key="ed_basic")
+    with col2:
+        st.caption("外观检查")
+        inspect_df = st.data_editor(st.session_state.df_inspect, num_rows="fixed", use_container_width=True, hide_index=True, key="ed_inspect")
 
-        # 3. 电子与TEC
-        with st.expander("3. 电子参数与 TEC 设置", expanded=False):
-            e1, e2 = st.columns(2)
-            work_hours = e1.text_input("工作时长")
-            alarms = e2.text_input("报警状态", value="No Alarm")
+    # 2. 电子参数区
+    st.subheader("2. 电子参数 & TEC")
+    elec_df = st.data_editor(st.session_state.df_elec, num_rows="fixed", use_container_width=True, hide_index=True, key="ed_elec")
+    
+    c1, c2 = st.columns([1.5, 1])
+    with c1:
+        st.caption("TEC 参数 (请直接在表格内填写)")
+        # TEC 表格预设了2行，用户直接填
+        tec_df = st.data_editor(st.session_state.df_tec, num_rows="fixed", use_container_width=True, hide_index=True, key="ed_tec")
+    with c2:
+        st.caption("驱动参数 (Driver)")
+        driver_df = st.data_editor(st.session_state.df_driver, num_rows="fixed", use_container_width=True, hide_index=True, key="ed_driver")
+
+    # 3. 功率测量
+    st.subheader("3. 功率测量 (支持多行)")
+    power_df = st.data_editor(st.session_state.df_power, num_rows="dynamic", use_container_width=True, key="ed_power")
+    
+    st.caption("输出功率 (Output Power)")
+    output_df = st.data_editor(st.session_state.df_output, num_rows="fixed", use_container_width=True, hide_index=True, key="ed_output")
+
+    # 4. 故障描述 (保留文本域，支持回车换行)
+    st.subheader("4. 故障与措施")
+    problem = st.text_area("故障描述 (按 Enter 换行)", value=st.session_state.txt_problem, height=100, key="area_problem")
+    action_sum = st.text_area("采取措施-总体描述 (对应模板 {{ action }})", value=st.session_state.txt_summary, height=100, key="area_summary")
+    
+    st.caption("详细维修步骤 (对应模板 {{ action_1 }} ...)")
+    action_df = st.data_editor(st.session_state.df_action, num_rows="dynamic", use_container_width=True, hide_index=True, key="ed_action")
+    
+    note = st.text_area("备注", value=st.session_state.txt_note, height=68, key="area_note")
+
+    st.markdown("---")
+    
+    # ================= 保存按钮 =================
+    if st.button("💾 保存完整记录", type="primary"):
+        # 1. 从表格提取数据 (取第一行数据作为单值)
+        try:
+            # 基础信息取第0行
+            sn_val = basic_df.iloc[0]["序列号"]
             
-            st.markdown("**TEC 1 设置**")
-            t1_1, t1_2, t1_3 = st.columns(3)
-            tec1_set = t1_1.text_input("TEC1 设定值")
-            tec1_read = t1_2.text_input("TEC1 回读值")
-            tec1_peltier = t1_3.text_input("TEC1 电流")
-
-            st.markdown("**TEC 2 设置**")
-            t2_1, t2_2, t2_3 = st.columns(3)
-            tec2_set = t2_1.text_input("TEC2 设定值")
-            tec2_read = t2_2.text_input("TEC2 回读值")
-            tec2_peltier = t2_3.text_input("TEC2 电流")
-            
-            st.markdown("**驱动参数**")
-            h1, h2, h3 = st.columns(3)
-            hv = h1.text_input("高压 (HV)")
-            current = h2.text_input("峰值电流 (I Peak)")
-            pulse = h3.text_input("脉宽 (Pulse)")
-
-        # 4. 动态表格 (功率)
-        st.subheader("4. 功率测量数据")
-        st.caption("👇 在下方表格直接编辑，支持多行。")
-        
-        # 定义初始数据结构
-        # num_rows="dynamic" 允许用户自由添加行
-        default_power = pd.DataFrame([{"电流 I [A]": "", "脉宽 [us]": "", "波长 λ": "", "功率 P [W]": ""}])
-        edited_power_df = st.data_editor(default_power, num_rows="dynamic", use_container_width=True, key="power_editor")
-
-        st.markdown("**输出功率 (Output Power)**")
-        default_output = pd.DataFrame([{"355nm": "", "532nm": "", "1064nm": ""}])
-        edited_output_df = st.data_editor(default_output, num_rows="dynamic", use_container_width=True, key="output_editor")
-
-        # 5. 故障与维修
-        st.subheader("5. 故障分析与维修日志")
-        problem = st.text_area("故障描述", height=80)
-        action_summary = st.text_area("采取措施总体描述 (对应模板 {{ action }})", height=80)
-        
-        st.markdown("**详细维修步骤记录 (对应模板 {{ action_1 }} 等)**")
-        default_action = pd.DataFrame([{"维修措施": "", "操作员": operator, "日期": datetime.now().strftime("%Y-%m-%d")}])
-        edited_action_df = st.data_editor(default_action, num_rows="dynamic", use_container_width=True, key="action_editor")
-        
-        note = st.text_area("备注 (Notes)")
-
-        st.markdown("---")
-        # 提交按钮
-        submitted = st.form_submit_button("💾 保存完整记录", type="primary")
-
-        # ================== 保存逻辑 ==================
-        if submitted:
-            if not sn:
-                st.error("❌ 保存失败：序列号不能为空！")
+            if not sn_val:
+                st.error("❌ 保存失败：【序列号】不能为空！")
             else:
-                # 1. 提取表格数据 (这里直接用变量，不再去 session_state 找 key，避免报错)
-                power_records = edited_power_df.to_dict('records')
-                output_records = edited_output_df.to_dict('records')
-                action_records = edited_action_df.to_dict('records')
-
-                # 2. 构建记录字典
-                new_record = {
+                # 提取单行数据
+                record = {
                     "id": len(st.session_state['db']) + 1,
-                    "sn": sn, "model": model, "voltage": voltage, "operator": operator,
                     "date": datetime.now().strftime("%Y-%m-%d"),
-                    "obs_case": obs_case, "obs_mech": obs_mech,
-                    "work_hours": work_hours, "alarms": alarms,
-                    "tec1_set": tec1_set, "tec1_read": tec1_read, "tec1_peltier": tec1_peltier,
-                    "tec2_set": tec2_set, "tec2_read": tec2_read, "tec2_peltier": tec2_peltier,
-                    "hv": hv, "current": current, "pulse": pulse,
-                    "problem": problem, 
-                    "action": action_summary, # 总体描述
+                    
+                    # 基础表
+                    "sn": sn_val,
+                    "model": basic_df.iloc[0]["型号"],
+                    "voltage": basic_df.iloc[0]["电压"],
+                    "operator": basic_df.iloc[0]["操作员"],
+                    
+                    # 外观表
+                    "obs_case": inspect_df.iloc[0]["外壳/包装"],
+                    "obs_mech": inspect_df.iloc[0]["机械损伤"],
+                    
+                    # 电子表
+                    "work_hours": elec_df.iloc[0]["工作时长"],
+                    "alarms": elec_df.iloc[0]["报警状态"],
+                    
+                    # 驱动表
+                    "hv": driver_df.iloc[0]["高压 (HV)"],
+                    "current": driver_df.iloc[0]["峰值电流"],
+                    "pulse": driver_df.iloc[0]["脉宽"],
+                    
+                    # TEC表 (需要取第0行和第1行)
+                    "tec1_set": tec_df.iloc[0]["设定值"], "tec1_read": tec_df.iloc[0]["回读值"], "tec1_peltier": tec_df.iloc[0]["电流"],
+                    "tec2_set": tec_df.iloc[1]["设定值"], "tec2_read": tec_df.iloc[1]["回读值"], "tec2_peltier": tec_df.iloc[1]["电流"],
+                    
+                    # 文本域
+                    "problem": problem,
+                    "action": action_sum,
                     "note": note,
-                    # 动态表格数据
-                    "power_table": power_records,
-                    "output_table": output_records,
-                    "action_table": action_records
+                    
+                    # 动态表格 (转字典)
+                    "power_table": power_df.to_dict('records'),
+                    "output_table": output_df.to_dict('records'),
+                    "action_table": action_df.to_dict('records')
                 }
                 
-                # 3. 存入数据库
-                st.session_state['db'].append(new_record)
-                st.success(f"✅ 序列号 {sn} 已保存！(表单已自动清空)")
+                # 保存
+                st.session_state['db'].append(record)
+                st.success(f"✅ 序列号 {sn_val} 保存成功！")
                 
-                # 4. 这里的 clear_on_submit=True 会在下次刷新时自动清空所有框
-                # 不需要额外写 clear() 代码
+                # 重置所有数据
+                reset_all_data()
+                st.rerun()
+                
+        except Exception as e:
+            st.error(f"数据提取错误: {e}")
 
-# --- TAB 2: 查询界面 ---
+# --- TAB 2: 历史记录 ---
 with tab2:
     st.header("🗄️ 维修档案库")
-    
-    search_term = st.text_input("🔍 输入序列号搜索：")
+    search_term = st.text_input("🔍 搜索序列号:")
     
     display_data = st.session_state['db']
     if search_term:
@@ -232,28 +283,17 @@ with tab2:
         st.info("暂无数据。")
     else:
         for i, record in enumerate(reversed(display_data)):
-            # 倒序显示，最新的在最上面
-            with st.expander(f"📅 {record['date']} | SN: {record['sn']} | 操作员: {record['operator']}"):
+            with st.expander(f"📅 {record['date']} | SN: {record['sn']} | {record['operator']}"):
                 col1, col2 = st.columns([3, 1])
                 with col1:
-                    st.markdown(f"**故障:** {record['problem']}")
-                    st.markdown(f"**措施(总体):** {record['action']}")
+                    st.write(f"**故障:** {record['problem']}")
+                    st.write(f"**措施:** {record['action']}")
                 with col2:
-                    # 下载 Word
                     doc_file = generate_doc(record)
                     if doc_file:
-                        st.download_button(
-                            label="📥 下载 Word",
-                            data=doc_file,
-                            file_name=f"Report_{record['sn']}_{record['date']}.docx",
-                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                            key=f"dl_{record['id']}"
-                        )
-                    else:
-                        st.warning("⚠️ 缺少模板文件")
+                        st.download_button("📥 下载 Word", doc_file, f"Report_{record['sn']}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"dl_{record['id']}")
                     
-                    # 删除按钮 (仅管理员)
                     if st.session_state['is_admin']:
-                        if st.button("🗑️ 删除记录", key=f"del_{record['id']}"):
+                        if st.button("🗑️ 删除", key=f"del_{record['id']}"):
                             st.session_state['db'] = [d for d in st.session_state['db'] if d['id'] != record['id']]
                             st.rerun()
