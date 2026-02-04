@@ -25,7 +25,7 @@ def init_dataframes():
     # 1. 基础信息表 (单行)
     if 'df_basic' not in st.session_state:
         st.session_state.df_basic = pd.DataFrame([
-            {"序列号": "", "型号": "WYP-", "电压": "24V", "操作员": "Guest"}
+            {"序列号": "", "型号": "C-WEDG", "电压": "9V/15V", "操作员": ""}
         ])
     
     # 2. 外观检查表 (单行)
@@ -43,8 +43,8 @@ def init_dataframes():
     # 4. TEC 参数表 (2行: TEC1, TEC2)
     if 'df_tec' not in st.session_state:
         st.session_state.df_tec = pd.DataFrame([
-            {"名称": "TEC 1", "设定值": "", "回读值": "", "电流": ""},
-            {"名称": "TEC 2", "设定值": "", "回读值": "", "电流": ""}
+            {"名称": "TEC 1（Pump）", "设定值": "", "回读值": "", "电流": ""},
+            {"名称": "TEC 2(Res)", "设定值": "", "回读值": "", "电流": ""}
         ])
 
     # 5. 驱动参数表 (单行)
@@ -200,10 +200,10 @@ with tab1:
 
     # 4. 故障描述 (保留文本域，支持回车换行)
     st.subheader("4. 故障与措施")
-    problem = st.text_area("故障描述 (按 Enter 换行)", value=st.session_state.txt_problem, height=100, key="area_problem")
-    action_sum = st.text_area("采取措施-总体描述 (对应模板 {{ action }})", value=st.session_state.txt_summary, height=100, key="area_summary")
+    problem = st.text_area("故障描述 ", value=st.session_state.txt_problem, height=100, key="area_problem")
+    action_sum = st.text_area("采取措施-总体描述 ", value=st.session_state.txt_summary, height=100, key="area_summary")
     
-    st.caption("详细维修步骤 (对应模板 {{ action_1 }} ...)")
+    st.caption("详细维修步骤 ")
     action_df = st.data_editor(st.session_state.df_action, num_rows="dynamic", use_container_width=True, hide_index=True, key="ed_action")
     
     note = st.text_area("备注", value=st.session_state.txt_note, height=68, key="area_note")
