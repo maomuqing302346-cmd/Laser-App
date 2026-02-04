@@ -8,7 +8,7 @@ import os
 # ==========================================
 # 1. 页面配置
 # ==========================================
-st.set_page_config(page_title="激光器维修系统 (稳定版)", page_icon="🔋", layout="wide")
+st.set_page_config(page_title="激光器维修系统 (完美版)", page_icon="🔋", layout="wide")
 
 # 初始化数据库
 if 'db' not in st.session_state:
@@ -18,43 +18,12 @@ if 'db' not in st.session_state:
 if 'is_admin' not in st.session_state:
     st.session_state['is_admin'] = False
 
-# 初始化消息提示状态 (用于Callback反馈)
-if 'msg_type' not in st.session_state:
-    st.session_state['msg_type'] = None # success / error
-if 'msg_content' not in st.session_state:
-    st.session_state['msg_content'] = ""
+# 初始化重置标志位 (用于清空输入框)
+if 'reset_trigger' not in st.session_state:
+    st.session_state['reset_trigger'] = False
 
 # ==========================================
-# 2. 状态管理与清空逻辑
-# ==========================================
-def init_input_states():
-    # 定义所有输入框的默认值
-    defaults = {
-        "sn_input": "", "model_input": "WYP-", "voltage_input": "24V", "operator_input": "Guest",
-        "obs_case_input": "完好 Normal", "obs_mech_input": "无 None",
-        "work_hours_input": "", "alarms_input": "No Alarm",
-        "tec1_set_input": "", "tec1_read_input": "", "tec1_peltier_input": "",
-        "tec2_set_input": "", "tec2_read_input": "", "tec2_peltier_input": "",
-        "hv_input": "", "current_input": "", "pulse_input": "",
-        "problem_input": "", "action_summary_input": "", "note_input": ""
-    }
-    for key, val in defaults.items():
-        if key not in st.session_state:
-            st.session_state[key] = val
-
-    # 初始化表格数据源
-    if "df_power" not in st.session_state:
-        st.session_state.df_power = pd.DataFrame([{"电流 I [A]": "", "脉宽 [us]": "", "波长 λ": "", "功率 P [W]": ""}])
-    if "df_output" not in st.session_state:
-        st.session_state.df_output = pd.DataFrame([{"355nm": "", "532nm": "", "1064nm": ""}])
-    if "df_action" not in st.session_state:
-        st.session_state.df_action = pd.DataFrame([{"维修措施": "", "操作员": "Guest", "日期": datetime.now().strftime("%Y-%m-%d")}])
-
-# 运行初始化
-init_input_states()
-
-# ==========================================
-# 3. 核心逻辑函数
+# 2. 核心逻辑函数
 # ==========================================
 def flatten_data_for_template(record):
     """数据拍平处理"""
@@ -101,76 +70,7 @@ def generate_doc(record):
         return None
 
 # ==========================================
-# 4. 【关键修复】保存回调函数
-# ==========================================
-def save_data_callback():
-    """
-    这是一个回调函数。
-    它会在点击按钮后、页面重新刷新前执行。
-    只有在这里，我们才能安全地清空输入框。
-    """
-    # 1. 从 session_state 获取当前输入框的值
-    sn = st.session_state.sn_input
-    
-    # 2. 验证
-    if not sn:
-        st.session_state['msg_type'] = 'error'
-        st.session_state['msg_content'] = "❌ 保存失败：序列号不能为空！"
-        return # 验证失败，直接结束，不清空输入框
-
-    # 3. 收集数据
-    new_record = {
-        "id": len(st.session_state['db']) + 1,
-        "sn": sn, 
-        "model": st.session_state.model_input, 
-        "voltage": st.session_state.voltage_input, 
-        "operator": st.session_state.operator_input,
-        "date": datetime.now().strftime("%Y-%m-%d"),
-        "obs_case": st.session_state.obs_case_input, 
-        "obs_mech": st.session_state.obs_mech_input,
-        "work_hours": st.session_state.work_hours_input, 
-        "alarms": st.session_state.alarms_input,
-        "tec1_set": st.session_state.tec1_set_input, 
-        "tec1_read": st.session_state.tec1_read_input, 
-        "tec1_peltier": st.session_state.tec1_peltier_input,
-        "tec2_set": st.session_state.tec2_set_input, 
-        "tec2_read": st.session_state.tec2_read_input, 
-        "tec2_peltier": st.session_state.tec2_peltier_input,
-        "hv": st.session_state.hv_input, 
-        "current": st.session_state.current_input, 
-        "pulse": st.session_state.pulse_input,
-        "problem": st.session_state.problem_input, 
-        "action": st.session_state.action_summary_input, # 总体描述
-        "note": st.session_state.note_input,
-        # 获取表格数据 (DataEditor 的数据会自动同步到绑定的 session_state key 中，但这里我们需要取它的 value)
-        # 注意：DataEditor 绑定的 key 在 session_state 中就是修改后的 DataFrame
-        "power_table": st.session_state.editor_power.to_dict('records'),
-        "output_table": st.session_state.editor_output.to_dict('records'),
-        "action_table": st.session_state.editor_action.to_dict('records')
-    }
-
-    # 4. 存入数据库
-    st.session_state['db'].append(new_record)
-    
-    # 5. 设置成功消息
-    st.session_state['msg_type'] = 'success'
-    st.session_state['msg_content'] = f"✅ 序列号 {sn} 的记录已成功保存！"
-
-    # 6. 【安全清空】直接修改 session_state，准备下一次渲染
-    st.session_state.sn_input = ""
-    st.session_state.problem_input = ""
-    st.session_state.action_summary_input = ""
-    st.session_state.note_input = ""
-    # 重置其他字段为默认值...
-    st.session_state.model_input = "WYP-"
-    
-    # 重置表格数据源 (这样 DataEditor 重新加载时就是空的)
-    st.session_state.df_power = pd.DataFrame([{"电流 I [A]": "", "脉宽 [us]": "", "波长 λ": "", "功率 P [W]": ""}])
-    st.session_state.df_action = pd.DataFrame([{"维修措施": "", "操作员": st.session_state.operator_input, "日期": datetime.now().strftime("%Y-%m-%d")}])
-    # 注意：Output 表格一般不需要重置为空，保留默认结构即可
-
-# ==========================================
-# 5. 侧边栏与主界面
+# 3. 侧边栏与主界面
 # ==========================================
 with st.sidebar:
     st.header("🔧 系统菜单")
@@ -192,85 +92,154 @@ with st.sidebar:
 
 st.title("🔋 激光器维修档案系统")
 
-# 顶部消息提示区 (处理 Callback 的反馈)
-if st.session_state['msg_type'] == 'success':
-    st.success(st.session_state['msg_content'])
-    st.session_state['msg_type'] = None # 显示一次后重置
-elif st.session_state['msg_type'] == 'error':
-    st.error(st.session_state['msg_content'])
-    st.session_state['msg_type'] = None
-
 tab1, tab2 = st.tabs(["📝 录入新记录", "🔍 历史档案库"])
 
 # --- TAB 1: 录入界面 ---
 with tab1:
     st.info("💡 提示：所有输入框现在按 Enter 不会自动保存。只有点击最底部的按钮才会提交。")
     
-    # 基础信息
+    # 【核心技巧】使用 reset_trigger 来控制是否清空
+    # 如果刚保存完，reset_trigger 为 True，我们就不给 default value，或者给空值
+    # 但由于 Streamlit 的 text_input 没有直接的 "clear" 方法，我们通过 key 的变化来强制重置组件
+    # 或者简单点：我们手动检查 reset_trigger，如果是 True，就用空字符串初始化，否则用 session state
+    
+    if st.session_state['reset_trigger']:
+        # 刚刚保存过，需要重置所有默认值
+        default_sn = ""
+        default_problem = ""
+        default_action = ""
+        default_note = ""
+        # 强制重置 DataFrame
+        df_power_source = pd.DataFrame([{"电流 I [A]": "", "脉宽 [us]": "", "波长 λ": "", "功率 P [W]": ""}])
+        df_output_source = pd.DataFrame([{"355nm": "", "532nm": "", "1064nm": ""}])
+        df_action_source = pd.DataFrame([{"维修措施": "", "操作员": "Guest", "日期": datetime.now().strftime("%Y-%m-%d")}])
+        # 重置标志位，防止死循环 (但要等到页面渲染完，所以在最后重置)
+    else:
+        # 正常状态，保持用户输入（这里其实不需要做太多，Streamlit 会自动保持，除非我们想回填数据）
+        # 为了简单，我们每次都给默认值，依靠 st.session_state 自动保持输入
+        default_sn = st.session_state.get("_sn_val", "")
+        default_problem = st.session_state.get("_prob_val", "")
+        default_action = st.session_state.get("_act_val", "")
+        default_note = st.session_state.get("_note_val", "")
+        
+        # 表格数据源需要持久化，否则每次刷新都空了
+        if 'df_power_cache' not in st.session_state:
+            st.session_state.df_power_cache = pd.DataFrame([{"电流 I [A]": "", "脉宽 [us]": "", "波长 λ": "", "功率 P [W]": ""}])
+        df_power_source = st.session_state.df_power_cache
+        
+        if 'df_output_cache' not in st.session_state:
+            st.session_state.df_output_cache = pd.DataFrame([{"355nm": "", "532nm": "", "1064nm": ""}])
+        df_output_source = st.session_state.df_output_cache
+        
+        if 'df_action_cache' not in st.session_state:
+            st.session_state.df_action_cache = pd.DataFrame([{"维修措施": "", "操作员": "Guest", "日期": datetime.now().strftime("%Y-%m-%d")}])
+        df_action_source = st.session_state.df_action_cache
+
+    # --- 开始绘制表单 (直接使用返回值) ---
+    
     st.subheader("1. 基础信息")
     c1, c2, c3, c4 = st.columns(4)
-    st.text_input("序列号 (Serial No.)", key="sn_input")
-    st.text_input("型号 (Model)", key="model_input")
-    st.text_input("电压 (Voltage)", key="voltage_input")
-    st.text_input("当前操作员", key="operator_input")
+    # 使用 key="_xxx_val" 来让 Streamlit 自动管理状态，但在 key 变化时会重置
+    # 为了实现清空，我们这里使用 value 参数 + key
+    # 这里的技巧是：当 reset_trigger 为 True 时，我们不传 value (或者传空)，但 key 必须变一下才能强制刷新？
+    # 不，更简单的办法是：使用 st.empty() 或者回调清空 session state 对应的 key。
+    # 让我们回到最稳妥的 key 绑定法，但在保存时，手动清空 session_state[key]
     
-    # 外观
+    sn = st.text_input("序列号 (Serial No.)", key="sn_key")
+    model = st.text_input("型号 (Model)", value="WYP-", key="model_key")
+    voltage = st.text_input("电压 (Voltage)", value="24V", key="voltage_key")
+    operator = st.text_input("当前操作员", value="Guest", key="operator_key")
+    
     st.subheader("2. 外观检查")
     c1, c2 = st.columns(2)
-    st.text_input("外壳/包装状态", key="obs_case_input")
-    st.text_input("机械损伤", key="obs_mech_input")
+    obs_case = c1.text_input("外壳/包装状态", value="完好 Normal", key="case_key")
+    obs_mech = c2.text_input("机械损伤", value="无 None", key="mech_key")
 
-    # 电子与TEC
-    with st.expander("3. 电子参数与 TEC 设置 (点击展开)", expanded=False):
+    with st.expander("3. 电子参数与 TEC 设置", expanded=False):
         e1, e2 = st.columns(2)
-        st.text_input("工作时长 (Hours)", key="work_hours_input")
-        st.text_input("报警状态 (Alarms)", key="alarms_input")
+        wh = st.text_input("工作时长", key="wh_key")
+        alarms = st.text_input("报警状态", value="No Alarm", key="alarm_key")
         
-        st.markdown("**TEC 1 设置**")
+        st.markdown("**TEC 1**")
         t1_1, t1_2, t1_3 = st.columns(3)
-        st.text_input("TEC1 设定值", key="tec1_set_input")
-        st.text_input("TEC1 回读值", key="tec1_read_input")
-        st.text_input("TEC1 电流", key="tec1_peltier_input")
+        tec1_s = st.text_input("TEC1 设定", key="t1s_key")
+        tec1_r = st.text_input("TEC1 回读", key="t1r_key")
+        tec1_p = st.text_input("TEC1 电流", key="t1p_key")
 
-        st.markdown("**TEC 2 设置**")
+        st.markdown("**TEC 2**")
         t2_1, t2_2, t2_3 = st.columns(3)
-        st.text_input("TEC2 设定值", key="tec2_set_input")
-        st.text_input("TEC2 回读值", key="tec2_read_input")
-        st.text_input("TEC2 电流", key="tec2_peltier_input")
+        tec2_s = st.text_input("TEC2 设定", key="t2s_key")
+        tec2_r = st.text_input("TEC2 回读", key="t2r_key")
+        tec2_p = st.text_input("TEC2 电流", key="t2p_key")
         
-        st.markdown("**驱动参数**")
+        st.markdown("**驱动**")
         h1, h2, h3 = st.columns(3)
-        st.text_input("高压 (HV)", key="hv_input")
-        st.text_input("峰值电流 (I Peak)", key="current_input")
-        st.text_input("脉宽 (Pulse)", key="pulse_input")
+        hv = st.text_input("高压 (HV)", key="hv_key")
+        curr = st.text_input("峰值电流", key="curr_key")
+        puls = st.text_input("脉宽", key="puls_key")
 
-    # 动态表格
-    st.subheader("4. 功率测量数据 (支持多行)")
-    # 绑定 st.session_state.df_power 确保重置生效
-    st.data_editor(st.session_state.df_power, num_rows="dynamic", use_container_width=True, key="editor_power")
+    st.subheader("4. 功率测量数据")
+    # 【关键】直接获取编辑后的 DataFrame
+    edited_power_df = st.data_editor(df_power_source, num_rows="dynamic", use_container_width=True, key="editor_power_new")
+    # 实时更新缓存，防止刷新丢失
+    st.session_state.df_power_cache = edited_power_df 
 
-    st.markdown("**输出功率 (Output Power)**")
-    st.data_editor(st.session_state.df_output, num_rows="fixed", use_container_width=True, key="editor_output")
+    st.markdown("**输出功率**")
+    edited_output_df = st.data_editor(df_output_source, num_rows="fixed", use_container_width=True, key="editor_output_new")
+    st.session_state.df_output_cache = edited_output_df
 
-    # 故障与维修
     st.subheader("5. 故障分析与维修日志")
-    st.text_area("故障描述 (Description)", height=80, key="problem_input")
-    st.text_area("采取措施总体描述 (Action Taken)", height=80, key="action_summary_input")
+    problem = st.text_area("故障描述", height=80, key="prob_key")
+    action_sum = st.text_area("采取措施 (总体)", height=80, key="act_key")
     
-    st.markdown("**详细维修步骤记录 (Repair Actions Table)**")
-    st.data_editor(st.session_state.df_action, num_rows="dynamic", use_container_width=True, key="editor_action")
+    st.markdown("**详细维修步骤**")
+    edited_action_df = st.data_editor(df_action_source, num_rows="dynamic", use_container_width=True, key="editor_action_new")
+    st.session_state.df_action_cache = edited_action_df
     
-    st.text_area("备注 (Notes)", key="note_input")
+    note = st.text_area("备注", key="note_key")
 
     st.markdown("---")
-    # 【关键修改】使用 on_click 绑定回调函数
-    # 这样点击按钮时，先执行 save_data_callback 清空数据，然后再刷新页面，就不会报错了
-    st.button("💾 保存完整记录", type="primary", on_click=save_data_callback)
+    
+    # ================= 保存逻辑 (无需回调，直接写在按钮逻辑里) =================
+    if st.button("💾 保存完整记录", type="primary"):
+        if not sn:
+            st.error("❌ 序列号不能为空！")
+        else:
+            # 1. 收集数据 (直接使用上面的变量)
+            new_record = {
+                "id": len(st.session_state['db']) + 1,
+                "sn": sn, "model": model, "voltage": voltage, "operator": operator,
+                "date": datetime.now().strftime("%Y-%m-%d"),
+                "obs_case": obs_case, "obs_mech": obs_mech,
+                "work_hours": wh, "alarms": alarms,
+                "tec1_set": tec1_s, "tec1_read": tec1_r, "tec1_peltier": tec1_p,
+                "tec2_set": tec2_s, "tec2_read": tec2_r, "tec2_peltier": tec2_p,
+                "hv": hv, "current": curr, "pulse": puls,
+                "problem": problem, "action": action_sum, "note": note,
+                # 2. 表格数据 (直接用 edited_power_df.to_dict，因为它是真的 DataFrame)
+                "power_table": edited_power_df.to_dict('records'),
+                "output_table": edited_output_df.to_dict('records'),
+                "action_table": edited_action_df.to_dict('records')
+            }
+            
+            st.session_state['db'].append(new_record)
+            st.success(f"✅ 序列号 {sn} 保存成功！")
+            
+            # 3. 清空数据 (简单粗暴法：直接删 key 或置空 session state)
+            st.session_state["sn_key"] = ""
+            st.session_state["prob_key"] = ""
+            st.session_state["act_key"] = ""
+            st.session_state["note_key"] = ""
+            # 清空表格缓存
+            st.session_state.df_power_cache = pd.DataFrame([{"电流 I [A]": "", "脉宽 [us]": "", "波长 λ": "", "功率 P [W]": ""}])
+            st.session_state.df_action_cache = pd.DataFrame([{"维修措施": "", "操作员": "Guest", "日期": datetime.now().strftime("%Y-%m-%d")}])
+            
+            # 4. 强制重跑一次，让清空生效
+            st.rerun()
 
 # --- TAB 2: 查询界面 ---
 with tab2:
     st.header("🗄️ 维修档案库")
-    
     search_term = st.text_input("🔍 输入序列号搜索：")
     
     display_data = st.session_state['db']
@@ -301,6 +270,5 @@ with tab2:
                     
                     if st.session_state['is_admin']:
                         if st.button("🗑️ 删除记录", key=f"del_{record['id']}"):
-                            # 删除逻辑
                             st.session_state['db'] = [d for d in st.session_state['db'] if d['id'] != record['id']]
                             st.rerun()
