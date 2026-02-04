@@ -50,11 +50,11 @@ def flatten_data_for_template(record):
     # 2. 处理输出功率表 (Output Table) - 假设只有一行，直接取值
     # 如果您希望输出功率也是多行的，逻辑同上。这里假设是单行多列结构。
     output_data = record.get('output_table', [])
-    if output_data:
-        first_row = output_data[0]
-        context["power_355"] = first_row.get("355nm", "")
-        context["power_532"] = first_row.get("532nm", "")
-        context["power_1064"] = first_row.get("1064nm", "")
+    for i, row in enumerate(output_data):
+        suffix = f"_{i+1}" # 生成 _1, _2, _3
+        context[f"power_355{suffix}"] = row.get("355nm", "")
+        context[f"power_532{suffix}"] = row.get("532nm", "")
+        context[f"power_1064{suffix}"] = row.get("1064nm", "")
 
     # 3. 处理维修步骤表 (Action Table)
     action_data = record.get('action_table', [])
